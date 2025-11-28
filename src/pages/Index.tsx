@@ -1,70 +1,112 @@
-import { useState } from "react";
-import { CheckCircle2, Circle, ListTodo } from "lucide-react";
+import { useState, useEffect } from "react";
+import { CheckCircle2, Circle, ListTodo, Loader2 } from "lucide-react";
 import { Todo } from "@/types/todo";
 import TaskItem from "@/components/TaskItem";
 import AddTaskForm from "@/components/AddTaskForm";
 import { cn } from "@/lib/utils";
-
-// Mock data - replace with actual API calls to your PostgreSQL backend
-const initialTodos: Todo[] = [
-  {
-    id: 1,
-    title: "Design the landing page",
-    description: "Create wireframes and high-fidelity mockups for the new landing page",
-    is_completed: false,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 2,
-    title: "Review pull requests",
-    description: null,
-    is_completed: true,
-    created_at: new Date(Date.now() - 86400000).toISOString(),
-  },
-  {
-    id: 3,
-    title: "Set up database migrations",
-    description: "Configure PostgreSQL and create initial schema",
-    is_completed: false,
-    created_at: new Date(Date.now() - 172800000).toISOString(),
-  },
-];
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 type FilterType = "all" | "active" | "completed";
 
 const Index = () => {
-  const [todos, setTodos] = useState<Todo[]>(initialTodos);
+  const [todos, setTodos] = useState<Todo[]>([]);
   const [filter, setFilter] = useState<FilterType>("all");
+  const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
 
-  const addTask = (title: string, description: string | null) => {
-    const newTask: Todo = {
-      id: Date.now(),
-      title,
-      description,
-      is_completed: false,
-      created_at: new Date().toISOString(),
-    };
-    setTodos([newTask, ...todos]);
+  useEffect(() => {
+    fetchTodos();
+  }, []);
+
+  const fetchTodos = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("todos")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      setTodos(
+        data.map((todo) => ({
+          ...todo,
+          is_completed: todo.is_completed ?? false,
+          created_at: todo.created_at ?? new Date().toISOString(),
+        }))
+      );
+    } catch (error) {
+      console.error("Error fetching todos:", error);
+      toast({ title: "Error", description: "Failed to fetch tasks", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const toggleTask = (id: number) => {
-    setTodos(
-      todos.map((todo) =>
-        todo.id === id ? { ...todo, is_completed: !todo.is_completed } : todo
-      )
-    );
+  const addTask = async (title: string, description: string | null) => {
+    try {
+      const { data, error } = await supabase
+        .from("todos")
+        .insert({ title, description, is_completed: false })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setTodos([
+        { ...data, is_completed: data.is_completed ?? false, created_at: data.created_at ?? new Date().toISOString() },
+        ...todos,
+      ]);
+      toast({ title: "Task added successfully" });
+    } catch (error) {
+      console.error("Error adding task:", error);
+      toast({ title: "Error", description: "Failed to add task", variant: "destructive" });
+    }
   };
 
-  const deleteTask = (id: number) => {
-    setTodos(todos.filter((todo) => todo.id !== id));
+  const toggleTask = async (id: number) => {
+    const task = todos.find((t) => t.id === id);
+    if (!task) return;
+
+    try {
+      const { error } = await supabase
+        .from("todos")
+        .update({ is_completed: !task.is_completed })
+        .eq("id", id);
+
+      if (error) throw error;
+
+      setTodos(todos.map((todo) => (todo.id === id ? { ...todo, is_completed: !todo.is_completed } : todo)));
+    } catch (error) {
+      console.error("Error toggling task:", error);
+      toast({ title: "Error", description: "Failed to update task", variant: "destructive" });
+    }
   };
 
-  const updateTask = (id: number, title: string, description: string | null) => {
-    setTodos(
-      todos.map((todo) =>
-        todo.id === id ? { ...todo, title, description } : todo
-      )
-    );
+  const deleteTask = async (id: number) => {
+    try {
+      const { error } = await supabase.from("todos").delete().eq("id", id);
+      if (error) throw error;
+
+      setTodos(todos.filter((todo) => todo.id !== id));
+      toast({ title: "Task deleted" });
+    } catch (error) {
+      console.error("Error deleting task:", error);
+      toast({ title: "Error", description: "Failed to delete task", variant: "destructive" });
+    }
+  };
+
+  const updateTask = async (id: number, title: string, description: string | null) => {
+    try {
+      const { error } = await supabase.from("todos").update({ title, description }).eq("id", id);
+      if (error) throw error;
+
+      setTodos(todos.map((todo) => (todo.id === id ? { ...todo, title, description } : todo)));
+      toast({ title: "Task updated" });
+    } catch (error) {
+      console.error("Error updating task:", error);
+      toast({ title: "Error", description: "Failed to update task", variant: "destructive" });
+    }
   };
 
   const filteredTodos = todos.filter((todo) => {
@@ -129,7 +171,12 @@ const Index = () => {
 
         {/* Task List */}
         <div className="space-y-3">
-          {filteredTodos.length === 0 ? (
+          {isLoading ? (
+            <div className="text-center py-12">
+              <Loader2 className="w-8 h-8 mx-auto animate-spin text-primary" />
+              <p className="text-muted-foreground mt-2">Loading tasks...</p>
+            </div>
+          ) : filteredTodos.length === 0 ? (
             <div className="text-center py-12">
               <div className="w-16 h-16 mx-auto mb-4 bg-muted rounded-full flex items-center justify-center">
                 <ListTodo className="w-8 h-8 text-muted-foreground" />
