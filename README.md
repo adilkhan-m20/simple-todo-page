@@ -1,4 +1,4 @@
-# Welcome to this To Do List App project
+# Welcome to this To Do List Web-App project
 
 ## Project info
 
