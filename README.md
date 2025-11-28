@@ -1,4 +1,4 @@
-# Welcome to your Lovable project
+# Welcome to this To Do List App project
 
 ## Project info
 
